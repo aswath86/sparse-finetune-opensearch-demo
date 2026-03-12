@@ -32,6 +32,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoModelForMaskedLM, AutoTokenizer
 from tqdm import tqdm
 
+# Matches opensearch-sparse-model-tuning-sample: inf_free queries, InfoNCE + FLOPS, in-batch negatives
 BASE_MODEL = "opensearch-project/opensearch-neural-sparse-encoding-doc-v2-mini"
 
 
