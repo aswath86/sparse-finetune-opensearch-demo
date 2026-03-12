@@ -3,3 +3,4 @@ finetuned_model/
 torchscript_tmp/
 model.zip
 base_model.zip
+.venv/
