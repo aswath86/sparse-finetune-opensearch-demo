@@ -2,19 +2,12 @@
 """
 Step 4: Export fine-tuned model to TorchScript for OpenSearch deployment.
 
-Wraps the fine-tuned model in a TorchScript-compatible module and packages
-it into a zip file that OpenSearch ML Commons can load as a SPARSE_ENCODING
-model.
+Packages the model into a zip that OpenSearch ML Commons can load as a
+SPARSE_ENCODING model.
 
 Usage:
-    docker run --rm -v $(pwd):/workspace -w /workspace sparse-ft \\
-        python export_torchscript.py finetuned_model model.zip
-
-What it does:
-    - Loads the fine-tuned model from the specified directory
-    - Wraps it in a SparseEncodingWrapper with the expected interface
-    - Traces the model with TorchScript
-    - Packages model.pt + tokenizer files into a zip
+    python export_torchscript.py [model_dir] [output.zip]
+    python export_torchscript.py finetuned_model model.zip
 """
 import torch, torch.nn.functional as F, os, zipfile, sys, shutil
 from transformers import AutoModelForMaskedLM, AutoTokenizer

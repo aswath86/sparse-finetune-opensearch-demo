@@ -2,28 +2,19 @@
 """
 Step 2: Fine-tune the doc-only sparse encoder on domain training data.
 
-Takes the training JSONL from prepare_data.py and fine-tunes the
-opensearch-neural-sparse-encoding-doc-v2-mini model using the doc-only
-(inference-free) approach matching the official OpenSearch architecture.
+Takes training JSONL and fine-tunes opensearch-neural-sparse-encoding-doc-v2-mini
+using the doc-only (inference-free) approach matching the official OpenSearch
+sparse model tuning sample repo.
 
 Usage:
-    docker run --rm -v $(pwd):/workspace -w /workspace sparse-ft \\
-        python train.py --data data/train_v2.jsonl --output finetuned_model \\
+    python train.py --data data/train_v2.jsonl --output finetuned_model \
         --in-batch-negatives --batch-size 15 --epochs 10
 
-What it does:
-    - Queries: encoded with tokenizer + IDF weights only (inf_free, no model)
-    - Documents: encoded with full model (log1p(relu(max_pool(logits))))
-    - In-batch negatives: all pos+neg docs in the batch become negatives
-      for every query (batch_size=15 → 29 negatives per query)
+Architecture:
+    - Queries: tokenizer + IDF weights only (inf_free, no model inference)
+    - Documents: full model encoding (log1p(relu(max_pool(logits))))
+    - In-batch negatives: batch_size=15 → 29 negatives per query
     - InfoNCE contrastive loss + FLOPS regularization on doc representations
-    - Saves the fine-tuned model weights and tokenizer
-
-This matches the official opensearch-sparse-model-tuning-sample approach:
-    - inf_free=true for queries (tokenizer + IDF)
-    - inf_free=false for documents (full model encoding)
-    - use_in_batch_negatives=true
-    - flops_d_lambda=0.05
 """
 import argparse, json, random, os
 import torch

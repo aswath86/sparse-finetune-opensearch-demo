@@ -1,6 +1,8 @@
 __pycache__/
 finetuned_model/
+finetuned_model_live/
 torchscript_tmp/
 model.zip
 base_model.zip
 .venv/
+.vscode/
