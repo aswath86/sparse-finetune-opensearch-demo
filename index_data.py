@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-Step 0: Index domain documents into OpenSearch.
+Step 0 (Pre-requisite): Index domain documents into OpenSearch.
 
-Creates a 'health-articles' index with 49 documents covering respiratory
-illness, vaccination, infection control, and public health. Represents the
-"existing domain data" in your cluster.
+Creates a 'health-articles' index with 49 realistic documents covering
+respiratory illness, vaccination, infection control, and public health.
+These represent the "existing domain data" that a customer would already
+have in their OpenSearch cluster. Run this before the demo.
 
 Usage:
     python index_data.py
+
+What it does:
+    - Deletes and recreates the 'health-articles' index
+    - Bulk-indexes 49 documents with title, content, category, source fields
+    - Prints category breakdown to show index diversity
 """
 import json, urllib.request
 

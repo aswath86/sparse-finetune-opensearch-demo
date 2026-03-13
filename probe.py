@@ -2,12 +2,18 @@
 """
 Step 3: Verify that the fine-tuned model learned domain terminology.
 
-Compares base vs fine-tuned model on document encoding, showing which
-domain-specific terms (vaccine, virus, fever, etc.) the fine-tuned model
-activates that the base model doesn't.
+Compares the base (pre-trained) model against the fine-tuned model on
+document encoding. Since this is a doc-only encoder, we check how the
+model expands document representations with domain-specific terms.
 
 Usage:
     python probe.py --model finetuned_model
+
+What it does:
+    - Runs each text through both base and fine-tuned models
+    - Extracts activations for target medical terms (vaccine, virus, etc.)
+    - Highlights NEW terms the fine-tuned model activates
+    - Includes OOD control queries to verify no domain contamination
 """
 import torch, argparse
 from transformers import AutoModelForMaskedLM, AutoTokenizer

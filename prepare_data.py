@@ -3,11 +3,21 @@
 Step 1: Generate training data from an existing OpenSearch index.
 
 Pulls documents from the 'health-articles' index and creates query-document
-pairs for fine-tuning. Uses a local LLM (Ollama) to:
-    1. Generate lay-person search queries per document
-    2. Find hard negatives by searching the index (must_not positive doc)
-    3. Validate hard negatives with LLM (reject if relevant)
+pairs suitable for fine-tuning a doc-only sparse encoder model. Uses a local
+LLM (Ollama) for four tasks:
+    1. Generate multiple lay-person search queries per document
+    2. Search index for hard negatives (must_not positive doc)
+    3. Validate hard negatives (reject if relevant to query)
     4. Generate an easy (out-of-domain) negative
+
+Each training sample contains:
+    - query:  LLM-generated lay-person question
+    - pos:    the original document from the index
+    - negs:   [hard_negative_from_index, easy_negative_from_llm]
+
+Generating multiple queries per document (--queries-per-doc 5) is important
+for the doc-only encoder approach — the model needs enough training signal
+to learn domain-specific document expansion.
 
 Usage:
     python prepare_data.py --limit 49 --queries-per-doc 5 --output data/train_v2.jsonl
