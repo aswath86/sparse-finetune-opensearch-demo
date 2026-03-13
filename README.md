@@ -5,6 +5,10 @@ using data from an existing OpenSearch index. Uses the doc-only encoder
 approach (inference-free at query time) matching the official OpenSearch
 neural sparse architecture.
 
+Companion code for the OpenSearchCon talk:
+**"Fine-tuning Neural Sparse Model for Domain Specific Data from an Existing OpenSearch Index"**
+— sequel to [Budget Friendly Semantic Search With Neural Sparse Search](https://www.youtube.com/watch?v=kx71KFf-Nv0).
+
 ## Pipeline Flow
 
 ```
@@ -74,6 +78,9 @@ python export_torchscript.py
 python demo_compare.py
 ```
 
+Pre-generated training data is included (`data/train_v2.jsonl` — 238 samples),
+so you can skip Step 1 and go straight to training.
+
 ## Step Details
 
 ### Step 0: Index domain documents
@@ -131,7 +138,7 @@ python -m http.server 8082 &
 # Register (DevTools)
 POST /_plugins/_ml/models/_register
 {
-  "name": "finetuned-sparse-v3",
+  "name": "finetuned-sparse",
   "version": "1.0.0",
   "model_format": "TORCH_SCRIPT",
   "function_name": "SPARSE_ENCODING",
@@ -145,7 +152,7 @@ POST /_plugins/_ml/models/<model_id>/_deploy
 
 ### Step 6: Compare
 
-Update `BASE_ID` and `FT_ID` in `demo_compare.py` with your model IDs, then:
+Update `BASE_ID` and `FT_ID` in `demo_compare.py` with your deployed model IDs, then:
 
 ```bash
 python demo_compare.py
@@ -173,6 +180,6 @@ Demo queries: `can you get sick twice`, `can i exercise after being sick`, `ches
 ## Requirements
 
 - Python 3.9+ with torch, transformers, tqdm
-- OpenSearch on port 9202
-- Ollama with qwen2.5:7b on port 11434 (for Step 1 only)
-- idf.json (included)
+- OpenSearch (scripts default to port 9202 — edit `OS_URL` in scripts to change)
+- Ollama with qwen2.5:7b (for Step 1 only — skip if using included training data)
+- idf.json (included — pre-computed IDF weights from official OpenSearch repo)
