@@ -12,9 +12,9 @@ pairs for fine-tuning. Uses a local LLM (Ollama) to:
 Usage:
     python prepare_data.py --limit 49 --queries-per-doc 5 --output data/train_v2.jsonl
 
-Requires:
-    - OpenSearch on localhost:9202 with health-articles index
-    - Ollama on localhost:11434 with qwen2.5:7b
+Prerequisites:
+    - OpenSearch on localhost:9202 with health-articles index (run index_data.py first)
+    - Ollama on localhost:11434 with qwen2.5:7b (ollama pull qwen2.5:7b)
 """
 import argparse, json, urllib.request
 

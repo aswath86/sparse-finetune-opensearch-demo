@@ -12,8 +12,8 @@ Usage:
 """
 import json, sys, urllib.request
 
-BASE_ID = "A83I3ZwBkywyXWfOmQhz"
-FT_ID = "B83J3ZwBkywyXWfO2whD"
+BASE_ID = "A83I3ZwBkywyXWfOmQhz"  # TODO: replace with your base model ID
+FT_ID = "B83J3ZwBkywyXWfO2whD"    # TODO: replace with your fine-tuned model ID
 OS_URL = "http://localhost:9202"
 SHOW_ROWS = 15
 
