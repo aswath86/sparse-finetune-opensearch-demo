@@ -242,6 +242,114 @@ tokenizer queries (doc-only mode — no model_id needed at query time):
 - `chest feels tight and hard to breathe` — FT promotes Respiratory Distress to #1
 - `my whole family got sick after a party` — FT surfaces Superspreader Events
 
+## Scaling to Production: Vocabulary-Driven Sampling
+
+This demo uses 49 documents — small enough to pull everything. In production with millions of documents, you need a principled way to select which documents become training data. Random sampling misses rare domain terms (where fine-tuning helps most) and over-represents common topics (where the base model is already fine).
+
+### Use the Inverted Index as Your Sampling Guide
+
+OpenSearch's inverted index already knows every term in your corpus and how common each one is. Use that to drive document selection.
+
+**Step 1: Create a temporary fielddata-enabled index**
+
+```json
+PUT /my-index-fielddata
+{
+  "mappings": {
+    "properties": {
+      "content": { "type": "text", "fielddata": true }
+    }
+  }
+}
+
+POST /_reindex
+{
+  "source": { "index": "my-index" },
+  "dest": { "index": "my-index-fielddata" }
+}
+```
+
+`fielddata` can't be disabled once enabled, so use a temporary index and delete it when done.
+
+**Step 2: Get terms across three frequency bands**
+
+Rare terms (fine-tuning adds the most new knowledge here):
+```json
+GET /my-index-fielddata/_search
+{
+  "size": 0,
+  "aggs": {
+    "rare": {
+      "terms": { "field": "content", "size": 1000, "order": { "_count": "asc" } }
+    }
+  }
+}
+```
+
+Medium terms (core domain vocabulary — bulk of real user queries):
+```json
+GET /my-index-fielddata/_search
+{
+  "size": 0,
+  "aggs": {
+    "medium": {
+      "terms": { "field": "content", "size": 1000, "min_doc_count": 10, "order": { "_count": "asc" } }
+    }
+  }
+}
+```
+Adjust `min_doc_count` based on index size to skip the rare band.
+
+Common terms (anchors the model, prevents drift):
+```json
+GET /my-index-fielddata/_search
+{
+  "size": 0,
+  "aggs": {
+    "common": {
+      "terms": { "field": "content", "size": 1000, "order": { "_count": "desc" } }
+    }
+  }
+}
+```
+
+**Step 3: For each term, find its best representative document**
+
+```json
+GET /my-index/_search
+{
+  "size": 1,
+  "query": { "match": { "content": "thrombocytopenia" } }
+}
+```
+
+The top-scoring document for a term is where that term is most prominent — the best training candidate. Deduplicate as you go (many terms point to the same doc).
+
+**Step 4: Sample proportionally**
+
+- 40% from rare terms
+- 40% from medium terms
+- 20% from common terms
+- Target 1,000–2,000 documents total (up to 5,000 for very diverse domains)
+
+**Step 5: Feed into the existing pipeline**
+
+The sampled documents go straight into `prepare_data.py` — everything downstream is unchanged: LLM generates queries, hard negatives from the index, OOD negatives, same training code, same hyperparameters.
+
+**Step 6: Cleanup**
+
+```json
+DELETE /my-index-fielddata
+```
+
+### Why Not Just Random Sampling?
+
+Random sampling at scale is biased toward common topics. If 80% of your index is about one topic, 80% of your training data will be too. The base model already handles common terms — it's the rare domain terms where fine-tuning adds value, and random sampling misses them.
+
+### Why Stratified and Not Just Rare Terms?
+
+Sampling only rare terms introduces skew the other direction — you overtrain on niche vocabulary and the model may drift on common queries users actually search for. Stratified sampling across all three bands prevents skew in either direction.
+
 ## Requirements
 
 - Python 3.9+ with torch, transformers, tqdm
