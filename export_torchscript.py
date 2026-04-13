@@ -1,70 +1,61 @@
 #!/usr/bin/env python3
 """
-Step 4: Export fine-tuned model to TorchScript for OpenSearch deployment.
-
-Wraps the fine-tuned model in a TorchScript-compatible module and packages
-it into a zip file that OpenSearch ML Commons can load as a SPARSE_ENCODING
-model.
+Export fine-tuned model to TorchScript zip for OpenSearch ML Commons.
 
 Usage:
-    python export_torchscript.py [model_dir] [output.zip]
-    python export_torchscript.py finetuned_model model.zip
-
-What it does:
-    - Loads the fine-tuned model from the specified directory
-    - Wraps it in a SparseEncodingWrapper with the expected interface
-    - Traces the model with TorchScript
-    - Packages model.pt + tokenizer files into a zip
+    python export_torchscript.py --model biobert_finetuned --output model.zip
 """
-import torch, torch.nn.functional as F, os, zipfile, sys, shutil
+import torch, torch.nn.functional as F, os, zipfile, sys, shutil, argparse
 from transformers import AutoModelForMaskedLM, AutoTokenizer
 from typing import Dict
 
-model_path = sys.argv[1] if len(sys.argv) > 1 else "finetuned_model"
-output_zip = sys.argv[2] if len(sys.argv) > 2 else "model.zip"
-tmp = "torchscript_tmp"
-if os.path.exists(tmp):
-    shutil.rmtree(tmp)
-os.makedirs(tmp)
-
-print(f"Loading model from {model_path}...")
-tokenizer = AutoTokenizer.from_pretrained(model_path)
-base_model = AutoModelForMaskedLM.from_pretrained(model_path, trust_remote_code=True).eval()
-
 
 class SparseEncodingWrapper(torch.nn.Module):
-    """Wrapper that matches OpenSearch SPARSE_ENCODING expected interface."""
     def __init__(self, model):
         super().__init__()
         self.model = model
-
     def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        input_ids = inputs["input_ids"]
-        attention_mask = inputs["attention_mask"]
-        logits = self.model(input_ids=input_ids, attention_mask=attention_mask).logits
-        pooled = torch.max(logits * attention_mask.unsqueeze(-1), dim=1).values
-        sparse = torch.log1p(torch.relu(pooled))
-        return {"output": sparse}
+        logits = self.model(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"]).logits
+        pooled = torch.max(logits * inputs["attention_mask"].unsqueeze(-1), dim=1).values
+        return {"output": torch.log1p(torch.relu(pooled))}
 
 
-wrapper = SparseEncodingWrapper(base_model).eval()
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", default="biobert_finetuned")
+    p.add_argument("--output", default="model.zip")
+    args = p.parse_args()
 
-print("Tracing model...")
-dummy = tokenizer("hello world test sentence", return_tensors="pt", return_token_type_ids=False, padding="max_length", max_length=32)
-dummy_dict = {"input_ids": dummy["input_ids"], "attention_mask": dummy["attention_mask"]}
-scripted = torch.jit.trace(wrapper, (dummy_dict,), strict=False)
-scripted.save(os.path.join(tmp, "model.pt"))
+    tmp = "torchscript_tmp"
+    if os.path.exists(tmp):
+        shutil.rmtree(tmp)
+    os.makedirs(tmp)
 
-# Copy tokenizer files
-for f in ["tokenizer.json", "tokenizer_config.json", "vocab.txt", "special_tokens_map.json", "config.json"]:
-    src = os.path.join(model_path, f)
-    if os.path.exists(src):
-        shutil.copy2(src, os.path.join(tmp, f))
+    print(f"Loading {args.model}...")
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    base_model = AutoModelForMaskedLM.from_pretrained(args.model).eval()
 
-print(f"Creating {output_zip}...")
-with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-    for f in os.listdir(tmp):
-        zf.write(os.path.join(tmp, f), f)
-        print(f"  {f} ({os.path.getsize(os.path.join(tmp, f)) / 1024 / 1024:.1f}MB)")
+    wrapper = SparseEncodingWrapper(base_model).eval()
+    dummy = tokenizer("hello world", return_tensors="pt", return_token_type_ids=False, padding="max_length", max_length=32)
+    dummy_dict = {"input_ids": dummy["input_ids"], "attention_mask": dummy["attention_mask"]}
 
-print(f"Done: {os.path.getsize(output_zip) / 1024 / 1024:.1f}MB")
+    print("Tracing...")
+    scripted = torch.jit.trace(wrapper, (dummy_dict,), strict=False)
+    scripted.save(os.path.join(tmp, "model.pt"))
+
+    for f in ["tokenizer.json", "tokenizer_config.json", "vocab.txt", "special_tokens_map.json", "config.json"]:
+        src = os.path.join(args.model, f)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(tmp, f))
+
+    print(f"Creating {args.output}...")
+    with zipfile.ZipFile(args.output, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in os.listdir(tmp):
+            zf.write(os.path.join(tmp, f), f)
+            print(f"  {f} ({os.path.getsize(os.path.join(tmp, f)) / 1024 / 1024:.1f}MB)")
+
+    print(f"Done: {os.path.getsize(args.output) / 1024 / 1024:.1f}MB")
+
+
+if __name__ == "__main__":
+    main()

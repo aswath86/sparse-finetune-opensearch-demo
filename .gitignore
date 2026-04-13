@@ -1,8 +1,10 @@
 __pycache__/
-finetuned_model/
-finetuned_model_live/
-torchscript_tmp/
-model.zip
-base_model.zip
+*.pyc
 .venv/
-.vscode/
+*_finetuned*/
+*.pt
+*.bin
+*.safetensors
+*.zip
+torchscript_tmp/
+.ipynb_checkpoints/
