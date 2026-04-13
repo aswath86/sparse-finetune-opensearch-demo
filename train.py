@@ -17,7 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoModelForMaskedLM, AutoTokenizer
 from tqdm import tqdm
 
-DEFAULT_MODEL = "dmis-lab/biobert-v1.1"
+DEFAULT_MODEL = "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
 
 
 class IRDataset(Dataset):

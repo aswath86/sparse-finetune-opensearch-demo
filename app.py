@@ -26,12 +26,13 @@ LOCAL_MODELS = {
     "PubMedBERT-FT": "pubmedbert_finetuned_30ep_v3",
 }
 PRESET_QUERIES = [
-    "dexamethasone for patients on oxygen support",
-    "hyperglycemia and immune dysfunction in diabetics",
-    "blood clots and thrombosis after viral infection",
-    "patient on a ventilator in the ICU",
+    "COPD symptoms and treatment",
     "side effects of corticosteroids",
     "gastrointestinal symptoms after infection",
+    "antimicrobial resistance in hospitals",
+    "why do diabetics get infections easily",
+    "my cholesterol is too high",
+    "patient on a ventilator in the ICU",
     "how to configure nginx reverse proxy",
 ]
 STOP = frozenset([
@@ -86,7 +87,7 @@ def load_local_model(path):
 
 def filter_tokens(tokens):
     return {t: v for t, v in tokens.items()
-            if t not in STOP and not t.startswith('##') and len(t) > 1 and v > THRESHOLD}
+            if t not in STOP and (t.startswith('##') or len(t) > 1) and v > THRESHOLD}
 
 
 def classify_token(t, ref, cur, bert_vocab=None):
