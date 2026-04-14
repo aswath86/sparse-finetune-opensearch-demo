@@ -1,3 +1,6 @@
 torch
-transformers
+transformers==5.3.0
 tqdm
+streamlit
+datasets
+requests

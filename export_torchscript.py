@@ -3,7 +3,7 @@
 Export fine-tuned model to TorchScript zip for OpenSearch ML Commons.
 
 Usage:
-    python export_torchscript.py --model biobert_finetuned --output model.zip
+    python export_torchscript.py --model pubmedbert_finetuned_30ep_v3 --output pubmedbert_model.zip
 """
 import torch, torch.nn.functional as F, os, zipfile, sys, shutil, argparse
 from transformers import AutoModelForMaskedLM, AutoTokenizer

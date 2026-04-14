@@ -8,7 +8,7 @@ on PubMed and has a domain-specific vocabulary.
 
 Usage:
     python probe.py
-    python probe.py --v2ft ../sparse-finetune-oscon-demov3/finetuned_model --pubft pubmedbert_finetuned_30ep_v2
+    python probe.py --v2ft ../sparse-finetune-oscon-demov3/finetuned_model --pubft pubmedbert_finetuned_30ep_v3
 """
 import torch, argparse
 from transformers import AutoModelForMaskedLM, AutoTokenizer

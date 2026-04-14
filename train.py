@@ -2,13 +2,13 @@
 """
 Fine-tune a sparse encoder using the doc-only (inference-free) approach.
 
-Default base model is BioBERT, but any BERT-based MLM model works via --model.
+Default base model is PubMedBERT, but any BERT-based MLM model works via --model.
 Matches the official opensearch-sparse-model-tuning-sample training mechanics:
 inf_free queries, InfoNCE + FLOPS, in-batch negatives.
 
 Usage:
-    python train.py --data data/train_v2.jsonl --output biobert_finetuned
-    python train.py --data data/train_v2.jsonl --output biobert_finetuned --model dmis-lab/biobert-v1.1
+    python train.py --data data/train_v2.jsonl --output pubmedbert_finetuned \
+        --idf-path idf_pubmedbert_clean.json --in-batch-negatives --batch-size 15 --epochs 30
 """
 import argparse, json, random, os
 import torch
@@ -153,5 +153,5 @@ if __name__ == "__main__":
     p.add_argument("--flops-warmup", type=int, default=200)
     p.add_argument("--seed", type=int, default=37)
     p.add_argument("--in-batch-negatives", action="store_true")
-    p.add_argument("--idf-path", default="idf.json")
+    p.add_argument("--idf-path", default="idf_pubmedbert_clean.json")
     train(p.parse_args())
