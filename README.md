@@ -43,27 +43,87 @@ backbone. You need a domain-pretrained model.
 ## Pipeline Flow
 
 ```
-index_data.py          Index 49 health articles into OpenSearch
-       ↓
-prepare_data.py        Generate training data (queries + negatives via Ollama)
-       ↓
-train.py               Fine-tune PubMedBERT sparse encoder (--model, --idf-path)
-       ↓
-probe.py               Three-way token comparison (v2-mini vs v2-mini-FT vs PubMedBERT-FT)
-       ↓
-export_torchscript.py  Package for OpenSearch (--model)
-       ↓
-Deploy via ML Commons  Register + deploy model.zip
-       ↓
-demo_compare.py        Three-way via OpenSearch Predict API (★ ▲ ▼ ◆ markers)
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 0 (Pre-requisite): index_data.py                          │
+│  Index 49 health articles into OpenSearch                       │
+│  → Creates the "existing domain data" in your cluster           │
+│  → Run before the demo; demo starts by showing this index       │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 1: prepare_data.py                                        │
+│  Generate training data from the index                          │
+│  → Fetch docs from OpenSearch                                   │
+│  → LLM generates 5 layperson queries per doc (Ollama qwen2.5:7b)│
+│  → Search index for hard negatives (must_not positive doc)      │
+│  → LLM validates negatives (reject if relevant)                 │
+│  → LLM generates easy (OOD) negative                            │
+│  → Output: data/train_v2.jsonl                                  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 1b: build_idf.py                                          │
+│  Build IDF weights from PubMed abstracts                        │
+│  → Downloads pubmed_qa unlabeled split (~61K abstracts)         │
+│  → Tokenizes with PubMedBERT (100% vocab match vs 40% w/ BERT) │
+│  → Computes IDF = log(N / df) per token                         │
+│  → --zero-stopwords: zeros 286 informal words (my, something)   │
+│  → Output: idf_pubmedbert_clean.json                            │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 2: train.py                                               │
+│  Fine-tune the PubMedBERT sparse encoder                        │
+│  → Doc-only (inf_free): queries use tokenizer + IDF weights,    │
+│    only documents go through the model                          │
+│  → In-batch negatives: every doc in the batch is a negative     │
+│    for every other query (batch_size=15 → 29 negatives/query)   │
+│  → InfoNCE contrastive loss + FLOPS regularization on docs      │
+│  → --model: any BERT-based MLM (default: PubMedBERT)            │
+│  → --idf-path: matched IDF file (default: idf_pubmedbert_clean) │
+│  → Output: pubmedbert_finetuned_30ep_v3/                        │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 3: probe.py                                               │
+│  Three-way token comparison                                     │
+│  → v2-mini (base) vs v2-mini-FT (demov3) vs PubMedBERT-FT      │
+│  → Shows ★ NEW tokens, ◆ VOCAB-NEW (not in BERT vocabulary)     │
+│  → Includes OOD control queries to verify no contamination      │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 4: export_torchscript.py                                  │
+│  Package model for OpenSearch deployment                        │
+│  → TorchScript trace + tokenizer → pubmedbert_model.zip         │
+│  → --model: path to fine-tuned model directory                  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 5: Deploy to OpenSearch                                   │
+│  Register and deploy via ML Commons API                         │
+│  → POST /_plugins/_ml/models/_register                          │
+│  → POST /_plugins/_ml/models/<id>/_deploy                       │
+│  → Use function_name (NOT model_task_type), omit model_config   │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 6: demo_compare.py                                        │
+│  Three-way comparison via OpenSearch Predict API                │
+│  → v2-mini vs v2-mini-FT vs PubMedBERT-FT                      │
+│  → ★ NEW, ▲ BOOSTED, ▼ DROPPED, ◆ NOT IN BERT VOCAB            │
+│  → Progressive markers: FT vs base, then PubBERT vs FT         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 A Streamlit UI (`app.py`) provides an interactive version of probe and
-demo_compare with colored token bars and preset queries.
+demo_compare with colored token bars and preset queries. See the
+[Streamlit App](#streamlit-app) section below.
 
 ## Quick Start
 
 ```bash
+# Setup
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -73,75 +133,138 @@ python index_data.py
 # Step 1: Generate training data (requires Ollama with qwen2.5:7b)
 python prepare_data.py --limit 49 --queries-per-doc 5 --output data/train_v2.jsonl
 
-# Step 2: Build IDF from PubMed abstracts (one-time)
-python -c "
-from datasets import load_dataset
-from transformers import AutoTokenizer
-from collections import Counter
-import json, math
+# Step 1b: Build IDF from PubMed abstracts (one-time)
+python build_idf.py --output idf_pubmedbert_clean.json --zero-stopwords
 
-tok = AutoTokenizer.from_pretrained('microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext')
-ds = load_dataset('pubmed_qa', 'pqa_unlabeled', split='train')
-df_count, N = Counter(), 0
-for row in ds:
-    text = ' '.join(row['context']['contexts'])
-    ids = set(tok.encode(text, add_special_tokens=False))
-    for i in ids: df_count[i] += 1
-    N += 1
-idf = {}
-for i, c in df_count.items():
-    t = tok.decode([i]).strip()
-    if t: idf[t] = round(math.log(N / c), 4)
-json.dump(idf, open('idf_pubmedbert.json', 'w'))
-print(f'{len(idf)} tokens, {N} docs')
-"
+# Step 2: Fine-tune (~15 min on CPU for 30 epochs)
+python train.py --data data/train_v2.jsonl --output pubmedbert_finetuned_30ep_v3 \
+    --in-batch-negatives --batch-size 15 --epochs 30
 
-# Step 2b: Zero stopwords in IDF (prevents model learning to activate 'my', 'something', etc.)
-# See idf_pubmedbert_clean.json (included — 286 stopwords zeroed)
+# Step 3: Verify
+python probe.py --pubft pubmedbert_finetuned_30ep_v3
 
-# Step 3: Fine-tune (~15 min on CPU for 30 epochs)
+# Step 4: Export for OpenSearch
+python export_torchscript.py --model pubmedbert_finetuned_30ep_v3 --output pubmedbert_model.zip
+
+# Step 5: Deploy (see below)
+
+# Step 6: Compare (requires deployed models)
+python demo_compare.py
+```
+
+Pre-generated training data (`data/train_v2.jsonl` — 238 samples) and
+pre-built IDF files (`idf_pubmedbert.json`, `idf_pubmedbert_clean.json`)
+are included, so you can skip Steps 1-1b and go straight to training.
+
+## Step Details
+
+### Step 0: Index domain documents
+
+```bash
+python index_data.py
+# → 49 health articles indexed into 'health-articles'
+
+# Verify index exists
+curl -s localhost:9202/health-articles/_count | python3 -m json.tool
+
+# Show a few documents
+curl -s localhost:9202/health-articles/_search?size=3 | python3 -m json.tool
+```
+
+Or re-index from scratch:
+```bash
+python index_data.py
+```
+
+### Step 1: Generate training data
+
+Requires Ollama (`ollama pull qwen2.5:7b`) and the health-articles index
+(run `index_data.py` first).
+
+```bash
+python prepare_data.py --limit 49 --queries-per-doc 5 --output data/train_v2.jsonl
+
+# Inspect a sample
+head -1 data/train_v2.jsonl | python3 -m json.tool
+```
+
+Each sample contains:
+- `query`: LLM-generated lay-person question
+- `pos`: the original document from the index
+- `negs`: [hard_negative_from_index, easy_negative_from_llm]
+
+### Step 1b: Build IDF weights
+
+The IDF file must match the model's tokenizer. PubMedBERT has a custom
+vocabulary trained on PubMed — using BERT's IDF gives only 40% token match
+and zero gradient signal for domain-specific tokens like `mellitus`,
+`vaccination`, `antibiotic`.
+
+```bash
+# Raw IDF from 61K PubMed abstracts
+python build_idf.py --output idf_pubmedbert.json
+
+# Cleaned version with stopwords zeroed (recommended for training)
+python build_idf.py --output idf_pubmedbert_clean.json --zero-stopwords
+```
+
+Why zero stopwords? Words like `my` (IDF=7.33), `something`, `feeling` are
+rare in PubMed papers and get artificially high IDF weights. The model then
+learns to activate them. Zeroing 286 such entries fixes this at the IDF level
+so the model handles stopword suppression naturally.
+
+### Step 2: Fine-tune
+
+```bash
 python train.py \
     --model microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext \
     --data data/train_v2.jsonl \
     --output pubmedbert_finetuned_30ep_v3 \
     --idf-path idf_pubmedbert_clean.json \
     --in-batch-negatives --batch-size 15 --epochs 30
-
-# Step 4: Verify
-python probe.py --pubft pubmedbert_finetuned_30ep_v3
-
-# Step 5: Export for OpenSearch
-python export_torchscript.py --model pubmedbert_finetuned_30ep_v3 --output pubmedbert_model.zip
-
-# Step 6: Deploy (see Deployment section below)
-
-# Step 7: Compare via Predict API
-python demo_compare.py
 ```
 
-Pre-generated training data (`data/train_v2.jsonl` — 238 samples) and
-pre-built IDF files (`idf_pubmedbert.json`, `idf_pubmedbert_clean.json`)
-are included, so you can skip Steps 1-2 and go straight to training.
+Key parameters:
+- `--model`: any BERT-based MLM model (default: PubMedBERT)
+- `--idf-path`: IDF weights matching the model's tokenizer
+  (default: `idf_pubmedbert_clean.json`)
+- `--in-batch-negatives`: all pos+neg docs in the batch become negatives
+  for every query (batch_size=15 → 29 negatives per query)
+- `--flops-lambda 0.05`: sparsity regularization on doc representations
+- `--seed 37`: reproducible results
 
-## IDF Rebuild: Why It Matters
+### Step 3: Probe
 
-The original `idf.json` was built from MS MARCO using BERT's tokenizer.
-Only 40% of PubMedBERT tokens matched — domain-specific tokens like
-`mellitus`, `vaccination`, `antibiotic` had IDF weight = 0, so the model
-got no gradient signal for them.
+```bash
+python probe.py --pubft pubmedbert_finetuned_30ep_v3
+```
 
-`idf_pubmedbert_clean.json` is built from 61K PubMed abstracts using
-PubMedBERT's tokenizer (100% match), with 286 informal stopwords zeroed
-(words like `my`, `something`, `feeling` that are rare in PubMed papers
-and would otherwise get artificially high IDF weights).
+Three-way comparison: v2-mini (base) vs v2-mini-FT (from demov3) vs
+PubMedBERT-FT. Shows top-N tokens per model with stopword filtering.
+★ marks tokens not in BERT's vocabulary (PubMedBERT-only).
 
-## Deployment
+Includes OOD control queries (e.g., "how to configure nginx reverse proxy")
+to verify no domain contamination.
+
+### Step 4: Export
+
+```bash
+python export_torchscript.py --model pubmedbert_finetuned_30ep_v3 --output pubmedbert_model.zip
+```
+
+Wraps the model in a TorchScript-compatible module and packages it with
+tokenizer files into a zip that OpenSearch ML Commons can load.
+
+Note: requires `transformers==5.3.0` — version 5.5.0 breaks TorchScript
+tracing (`masking_utils.py` error).
+
+### Step 5: Deploy to OpenSearch
 
 ```bash
 # Serve model zip via HTTP (OpenSearch in Docker can't see host filesystem)
 python -m http.server 8765 &
 
-# Register — use function_name, NOT model_task_type, and omit model_config
+# Register (DevTools) — use function_name, NOT model_task_type, and omit model_config
 POST /_plugins/_ml/models/_register
 {
   "name": "pubmedbert-sparse-ft",
@@ -152,12 +275,48 @@ POST /_plugins/_ml/models/_register
   "model_content_hash_value": "<sha256sum pubmedbert_model.zip>"
 }
 
+# Check task, get model_id:
 GET /_plugins/_ml/tasks/<task_id>
+
+# Deploy:
 POST /_plugins/_ml/models/<model_id>/_deploy
 ```
 
-Requires `allow_registering_model_via_url: true` and `private_ip_enabled: true`
-in cluster settings.
+Requires cluster settings:
+- `allow_registering_model_via_url: true`
+- `private_ip_enabled: true`
+
+### Step 6: Compare
+
+Update `V2_ID`, `V2FT_ID`, and `PUB_ID` in `demo_compare.py` with your
+deployed model IDs, then:
+
+```bash
+python demo_compare.py
+
+# Or with a specific query
+python demo_compare.py "COPD symptoms and treatment"
+```
+
+Shows a three-way side-by-side comparison with progressive markers:
+- v2-mini-FT column (vs base): ★ NEW, ▲ BOOSTED, ▼ DROPPED
+- PubMedBERT-FT column (vs v2-FT): ★ NEW, ▲ BOOSTED, ▼ DROPPED, ◆ VOCAB-NEW
+
+### Predict API (DevTools)
+
+```
+# Base model (pre-trained v2-mini)
+POST /_plugins/_ml/_predict/sparse_encoding/<base_model_id>
+{ "text_docs": ["COPD symptoms and treatment"] }
+
+# Fine-tuned v2-mini (demov3)
+POST /_plugins/_ml/_predict/sparse_encoding/<v2ft_model_id>
+{ "text_docs": ["COPD symptoms and treatment"] }
+
+# PubMedBERT fine-tuned (demov4)
+POST /_plugins/_ml/_predict/sparse_encoding/<pubmedbert_model_id>
+{ "text_docs": ["COPD symptoms and treatment"] }
+```
 
 ## Streamlit App
 
@@ -169,9 +328,42 @@ Two tabs:
 - **Local Probe** — loads models from disk, runs inference via HuggingFace
 - **Predict API** — hits OpenSearch Predict API for deployed models
 
-Preset queries are chosen to maximize the subword-vs-whole-token contrast
-(e.g., "COPD symptoms and treatment" where BERT sees `cop`+`police` and
-PubMedBERT sees `copd`+`respiratory`+`ventilation`).
+Features:
+- Preset query buttons chosen to maximize subword-vs-whole-token contrast
+  (e.g., "COPD symptoms and treatment" where BERT sees `cop`+`police` and
+  PubMedBERT sees `copd`+`respiratory`+`ventilation`)
+- Typeable text input for custom queries
+- PubMedBERT toggle to show/hide the third column
+- "Show all tokens" toggle for full activation list
+- Colored bars: green (★ NEW), blue (▲ BOOSTED), red (▼ DROPPED),
+  gold (◆ VOCAB-NEW)
+
+## Search Relevancy Workbench
+
+Create three sparse-encoded indices (one per model) and compare with default
+tokenizer queries (doc-only mode — no model_id needed at query time):
+
+**Panel 1 — Base** (index: `health-articles-sparse`):
+```json
+{"query":{"neural_sparse":{"content_sparse":{"query_text":"%SearchText%"}}}}
+```
+
+**Panel 2 — Fine-tuned v2-mini** (index: `health-articles-finetuned`):
+```json
+{"query":{"neural_sparse":{"content_sparse":{"query_text":"%SearchText%"}}}}
+```
+
+**Panel 3 — PubMedBERT-FT** (index: `health-articles-pubmedbert`):
+```json
+{"query":{"neural_sparse":{"content_sparse":{"query_text":"%SearchText%"}}}}
+```
+
+**Best demo queries:**
+- `COPD symptoms and treatment` — Base: `cop`, `police`. PubMedBERT-FT: `breath`, `ventilation`
+- `side effects of corticosteroids` — Base: `##oids`, `##cos`. PubMedBERT-FT: `corticosteroids◆`, `steroids◆`
+- `gastrointestinal symptoms after infection` — Base: `##estinal`. PubMedBERT-FT: `gastrointestinal◆`, `intestinal◆`
+- `why do diabetics get infections easily` — Base: `##bet`. PubMedBERT-FT: `diabetic◆`, `mellitus◆`
+- `patient on a ventilator in the ICU` — Base: `##tor`, `##u`. PubMedBERT-FT: `ventilator◆`, `icu◆`
 
 ## Marker Legend
 
@@ -210,9 +402,11 @@ is noisier because PubMedBERT's sparse head was not pre-trained for sparsity.
 ## Requirements
 
 - Python 3.9+ with `pip install -r requirements.txt`
-- OpenSearch (scripts default to `localhost:9202`)
-- Ollama with `qwen2.5:7b` (Step 1 only — skip if using included training data)
+- OpenSearch (scripts default to `localhost:9202` — edit `OS_URL` in scripts to change)
+- Ollama with `qwen2.5:7b` (for Step 1 only — skip if using included training data)
 - `transformers==5.3.0` (5.5.0 breaks TorchScript export)
+- IDF files included (`idf_pubmedbert.json`, `idf_pubmedbert_clean.json`) —
+  or rebuild with `build_idf.py` (requires `datasets` package)
 
 ## Scaling to Production: Vocabulary-Driven Sampling
 
