@@ -62,7 +62,7 @@ backbone. You need a domain-pretrained model.
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 1b: build_idf.py                                          │
+│  Step 2: build_idf.py                                           │
 │  Build IDF weights from PubMed abstracts                        │
 │  → Downloads pubmed_qa unlabeled split (~61K abstracts)         │
 │  → Tokenizes with PubMedBERT (100% vocab match vs 40% w/ BERT) │
@@ -72,7 +72,7 @@ backbone. You need a domain-pretrained model.
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 2: train.py                                               │
+│  Step 3: train.py                                               │
 │  Fine-tune the PubMedBERT sparse encoder                        │
 │  → Doc-only (inf_free): queries use tokenizer + IDF weights,    │
 │    only documents go through the model                          │
@@ -85,7 +85,7 @@ backbone. You need a domain-pretrained model.
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 3: probe.py                                               │
+│  Step 4: probe.py                                               │
 │  Three-way token comparison                                     │
 │  → v2-mini (base) vs v2-mini-FT (demov3) vs PubMedBERT-FT      │
 │  → Shows ★ NEW tokens, ◆ VOCAB-NEW (not in BERT vocabulary)     │
@@ -93,14 +93,14 @@ backbone. You need a domain-pretrained model.
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 4: export_torchscript.py                                  │
+│  Step 5: export_torchscript.py                                  │
 │  Package model for OpenSearch deployment                        │
 │  → TorchScript trace + tokenizer → pubmedbert_model.zip         │
 │  → --model: path to fine-tuned model directory                  │
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 5: Deploy to OpenSearch                                   │
+│  Step 6: Deploy to OpenSearch                                   │
 │  Register and deploy via ML Commons API                         │
 │  → POST /_plugins/_ml/models/_register                          │
 │  → POST /_plugins/_ml/models/<id>/_deploy                       │
@@ -108,7 +108,7 @@ backbone. You need a domain-pretrained model.
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 6: demo_compare.py                                        │
+│  Step 7: demo_compare.py                                        │
 │  Three-way comparison via OpenSearch Predict API                │
 │  → v2-mini vs v2-mini-FT vs PubMedBERT-FT                      │
 │  → ★ NEW, ▲ BOOSTED, ▼ DROPPED, ◆ NOT IN BERT VOCAB            │
@@ -133,28 +133,28 @@ python index_data.py
 # Step 1: Generate training data (requires Ollama with qwen2.5:7b)
 python prepare_data.py --limit 49 --queries-per-doc 5 --output data/train_v2.jsonl
 
-# Step 1b: Build IDF from PubMed abstracts (one-time)
+# Step 2: Build IDF from PubMed abstracts (one-time)
 python build_idf.py --output idf_pubmedbert_clean.json --zero-stopwords
 
-# Step 2: Fine-tune (~15 min on CPU for 30 epochs)
+# Step 3: Fine-tune (~15 min on CPU for 30 epochs)
 python train.py --data data/train_v2.jsonl --output pubmedbert_finetuned_30ep_v3 \
     --in-batch-negatives --batch-size 15 --epochs 30
 
-# Step 3: Verify
+# Step 4: Verify
 python probe.py --pubft pubmedbert_finetuned_30ep_v3
 
-# Step 4: Export for OpenSearch
+# Step 5: Export for OpenSearch
 python export_torchscript.py --model pubmedbert_finetuned_30ep_v3 --output pubmedbert_model.zip
 
-# Step 5: Deploy (see below)
+# Step 6: Deploy (see below)
 
-# Step 6: Compare (requires deployed models)
+# Step 7: Compare (requires deployed models)
 python demo_compare.py
 ```
 
 Pre-generated training data (`data/train_v2.jsonl` — 238 samples) and
 pre-built IDF files (`idf_pubmedbert.json`, `idf_pubmedbert_clean.json`)
-are included, so you can skip Steps 1-1b and go straight to training.
+are included, so you can skip Steps 1-2 and go straight to training.
 
 ## Step Details
 
@@ -193,7 +193,7 @@ Each sample contains:
 - `pos`: the original document from the index
 - `negs`: [hard_negative_from_index, easy_negative_from_llm]
 
-### Step 1b: Build IDF weights
+### Step 2: Build IDF weights
 
 The IDF file must match the model's tokenizer. PubMedBERT has a custom
 vocabulary trained on PubMed — using BERT's IDF gives only 40% token match
@@ -213,7 +213,7 @@ rare in PubMed papers and get artificially high IDF weights. The model then
 learns to activate them. Zeroing 286 such entries fixes this at the IDF level
 so the model handles stopword suppression naturally.
 
-### Step 2: Fine-tune
+### Step 3: Fine-tune
 
 ```bash
 python train.py \
@@ -233,7 +233,7 @@ Key parameters:
 - `--flops-lambda 0.05`: sparsity regularization on doc representations
 - `--seed 37`: reproducible results
 
-### Step 3: Probe
+### Step 4: Probe
 
 ```bash
 python probe.py --pubft pubmedbert_finetuned_30ep_v3
@@ -246,7 +246,7 @@ PubMedBERT-FT. Shows top-N tokens per model with stopword filtering.
 Includes OOD control queries (e.g., "how to configure nginx reverse proxy")
 to verify no domain contamination.
 
-### Step 4: Export
+### Step 5: Export
 
 ```bash
 python export_torchscript.py --model pubmedbert_finetuned_30ep_v3 --output pubmedbert_model.zip
@@ -258,7 +258,7 @@ tokenizer files into a zip that OpenSearch ML Commons can load.
 Note: requires `transformers==5.3.0` — version 5.5.0 breaks TorchScript
 tracing (`masking_utils.py` error).
 
-### Step 5: Deploy to OpenSearch
+### Step 6: Deploy to OpenSearch
 
 ```bash
 # Serve model zip via HTTP (OpenSearch in Docker can't see host filesystem)
@@ -286,7 +286,7 @@ Requires cluster settings:
 - `allow_registering_model_via_url: true`
 - `private_ip_enabled: true`
 
-### Step 6: Compare
+### Step 7: Compare
 
 Update `V2_ID`, `V2FT_ID`, and `PUB_ID` in `demo_compare.py` with your
 deployed model IDs, then:
