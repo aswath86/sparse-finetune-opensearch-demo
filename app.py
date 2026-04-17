@@ -25,7 +25,15 @@ LOCAL_MODELS = {
     "v2-mini-FT":    "../sparse-finetune-oscon-demov3/finetuned_model",
     "PubMedBERT-FT": "pubmedbert_finetuned_30ep_v3",
 }
-PRESET_QUERIES = [
+FT_PRESETS = [
+    "how does the virus spread",
+    "how long am i contagious",
+    "can you get sick twice",
+    "lost my sense of smell after being sick",
+    "my whole family got sick after a party",
+    "how to configure nginx reverse proxy",
+]
+PUBMED_PRESETS = [
     "COPD symptoms and treatment",
     "side effects of corticosteroids",
     "gastrointestinal symptoms after infection",
@@ -91,6 +99,8 @@ def filter_tokens(tokens):
 
 
 def classify_token(t, ref, cur, bert_vocab=None):
+    if not ref:
+        return "", C_NEUTRAL
     if bert_vocab is not None and t not in bert_vocab:
         return "◆ VOCAB-NEW", C_VOCAB
     if t not in ref or ref.get(t, 0) < THRESHOLD:
@@ -187,17 +197,21 @@ tab_probe, tab_api = st.tabs(["Local Probe", "Predict API"])
 # ===== Tab 1: Predict API =====
 with tab_api:
     col_query, col_toggle = st.columns([3, 1])
-    with col_query:
-        def _set_api(q): st.session_state.api_query = q
-        btn_cols = st.columns(len(PRESET_QUERIES))
-        for i, pq in enumerate(PRESET_QUERIES):
-            short = pq[:30] + "…" if len(pq) > 30 else pq
-            btn_cols[i].button(short, key=f"api_btn_{i}", on_click=_set_api, args=(pq,))
-        query_api = st.text_input("Query", value=PRESET_QUERIES[0], key="api_query")
     with col_toggle:
         st.markdown("<br>", unsafe_allow_html=True)
         show_pub_api = st.toggle("Show PubMedBERT-FT", value=False, key="api_pub")
         show_all_api = st.toggle("Show all tokens", value=False, key="api_all")
+    with col_query:
+        def _set_api(q): st.session_state.api_query = q
+        st.caption("Fine-tuning")
+        c1 = st.columns(len(FT_PRESETS))
+        for i, pq in enumerate(FT_PRESETS):
+            c1[i].button(pq[:30] + "…" if len(pq) > 30 else pq, key=f"api_ft_{i}", on_click=_set_api, args=(pq,))
+        st.caption("Vocabulary")
+        c2 = st.columns(len(PUBMED_PRESETS))
+        for i, pq in enumerate(PUBMED_PRESETS):
+            c2[i].button(pq[:30] + "…" if len(pq) > 30 else pq, key=f"api_voc_{i}", on_click=_set_api, args=(pq,))
+        query_api = st.text_input("Query", value=FT_PRESETS[0], key="api_query")
 
     if query_api:
         base_t = predict_api(API_MODELS["v2-mini"], query_api)
@@ -223,17 +237,21 @@ with tab_api:
 # ===== Tab 2: Local Probe =====
 with tab_probe:
     col_query2, col_toggle2 = st.columns([3, 1])
-    with col_query2:
-        def _set_probe(q): st.session_state.probe_query = q
-        btn_cols2 = st.columns(len(PRESET_QUERIES))
-        for i, pq in enumerate(PRESET_QUERIES):
-            short = pq[:30] + "…" if len(pq) > 30 else pq
-            btn_cols2[i].button(short, key=f"probe_btn_{i}", on_click=_set_probe, args=(pq,))
-        query_probe = st.text_input("Query", value=PRESET_QUERIES[0], key="probe_query")
     with col_toggle2:
         st.markdown("<br>", unsafe_allow_html=True)
         show_pub_probe = st.toggle("Show PubMedBERT-FT", value=False, key="probe_pub")
         show_all_probe = st.toggle("Show all tokens", value=False, key="probe_all")
+    with col_query2:
+        def _set_probe(q): st.session_state.probe_query = q
+        st.caption("Fine-tuning")
+        c3 = st.columns(len(FT_PRESETS))
+        for i, pq in enumerate(FT_PRESETS):
+            c3[i].button(pq[:30] + "…" if len(pq) > 30 else pq, key=f"probe_ft_{i}", on_click=_set_probe, args=(pq,))
+        st.caption("Vocabulary")
+        c4 = st.columns(len(PUBMED_PRESETS))
+        for i, pq in enumerate(PUBMED_PRESETS):
+            c4[i].button(pq[:30] + "…" if len(pq) > 30 else pq, key=f"probe_voc_{i}", on_click=_set_probe, args=(pq,))
+        query_probe = st.text_input("Query", value=FT_PRESETS[0], key="probe_query")
 
     if query_probe:
         with st.spinner("Running inference..."):

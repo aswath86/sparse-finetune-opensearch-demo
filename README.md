@@ -31,7 +31,7 @@ backbone. You need a domain-pretrained model.
 
 ## What Changed from v3
 
-| | v3 (China talk) | v4 (this repo) |
+| | v3 | v4 (this repo) |
 |---|---|---|
 | Base model | `opensearch-neural-sparse-encoding-doc-v2-mini` | `microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext` |
 | IDF weights | `idf.json` (BERT vocab, MS MARCO) | `idf_pubmedbert_clean.json` (PubMedBERT vocab, 61K PubMed abstracts) |
@@ -46,8 +46,7 @@ backbone. You need a domain-pretrained model.
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 0 (Pre-requisite): index_data.py                          │
 │  Index 49 health articles into OpenSearch                       │
-│  → Creates the "existing domain data" in your cluster           │
-│  → Run before the demo; demo starts by showing this index       │
+│  → Creates the "existing domain data" in your cluster           │ 
 └──────────────────────────┬──────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -65,7 +64,7 @@ backbone. You need a domain-pretrained model.
 │  Step 2: build_idf.py                                           │
 │  Build IDF weights from PubMed abstracts                        │
 │  → Downloads pubmed_qa unlabeled split (~61K abstracts)         │
-│  → Tokenizes with PubMedBERT (100% vocab match vs 40% w/ BERT) │
+│  → Tokenizes with PubMedBERT (100% vocab match vs 40% w/ BERT)  │
 │  → Computes IDF = log(N / df) per token                         │
 │  → --zero-stopwords: zeros 286 informal words (my, something)   │
 │  → Output: idf_pubmedbert_clean.json                            │
@@ -87,7 +86,7 @@ backbone. You need a domain-pretrained model.
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 4: probe.py                                               │
 │  Three-way token comparison                                     │
-│  → v2-mini (base) vs v2-mini-FT (demov3) vs PubMedBERT-FT      │
+│  → v2-mini (base) vs v2-mini-FT (demov3) vs PubMedBERT-FT       │
 │  → Shows ★ NEW tokens, ◆ VOCAB-NEW (not in BERT vocabulary)     │
 │  → Includes OOD control queries to verify no contamination      │
 └──────────────────────────┬──────────────────────────────────────┘
@@ -110,9 +109,9 @@ backbone. You need a domain-pretrained model.
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 7: demo_compare.py                                        │
 │  Three-way comparison via OpenSearch Predict API                │
-│  → v2-mini vs v2-mini-FT vs PubMedBERT-FT                      │
-│  → ★ NEW, ▲ BOOSTED, ▼ DROPPED, ◆ NOT IN BERT VOCAB            │
-│  → Progressive markers: FT vs base, then PubBERT vs FT         │
+│  → v2-mini vs v2-mini-FT vs PubMedBERT-FT                       │
+│  → ★ NEW, ▲ BOOSTED, ▼ DROPPED, ◆ NOT IN BERT VOCAB             │
+│  → Progressive markers: FT vs base, then PubBERT vs FT          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
